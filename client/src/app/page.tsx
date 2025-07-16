@@ -8,19 +8,18 @@ interface TranscriptItem {
   id: string;
   text: string;
   speaker: 'user' | 'assistant';
-  timestamp: Date;
   final: boolean;
 }
 
 export default function VoiceChat() {
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [transcripts, setTranscripts] = useState<TranscriptItem[]>([]);
-  const [connectionState, setConnectionState] = useState('disconnected');
+  const [currentTranscript, setCurrentTranscript] = useState<TranscriptItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   
   const pcClientRef = useRef<PipecatClient | null>(null);
-  const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
   // Track current building messages
@@ -53,11 +52,13 @@ export default function VoiceChat() {
           console.log('Disconnected from transport');
           setIsConnected(false);
           setIsConnecting(false);
+          setIsListening(false);
+          setIsSpeaking(false);
+          setCurrentTranscript(null);
         },
         
         onTransportStateChanged: (state: string) => {
           console.log('Transport state:', state);
-          setConnectionState(state);
         },
         
         onBotReady: () => {
@@ -83,15 +84,14 @@ export default function VoiceChat() {
               id: `user-${Date.now()}-${Math.random()}`,
               text: data.text.trim(),
               speaker: 'user',
-              timestamp: new Date(),
               final: true
             };
             
-            setTranscripts(prev => [...prev, newTranscript]);
+            setCurrentTranscript(newTranscript);
           }
         },
         
-        // FIXED: Real-time assistant display with proper spacing
+        // Real-time assistant display with proper spacing
         onBotTtsText: (data: any) => {
           console.log('Bot TTS text:', data);
           
@@ -105,36 +105,33 @@ export default function VoiceChat() {
               clearTimeout(assistantMessageTimeoutRef.current);
             }
             
-            // Update the current message in real-time
-            setTranscripts(prev => {
-              // Remove any existing building message
-              const filtered = prev.filter(t => t.id !== currentAssistantIdRef.current);
-              
-              // Create/update the building message
-              if (!currentAssistantIdRef.current) {
-                currentAssistantIdRef.current = `assistant-building-${Date.now()}`;
-              }
-              
-              const buildingTranscript: TranscriptItem = {
-                id: currentAssistantIdRef.current,
-                text: currentAssistantMessageRef.current,
-                speaker: 'assistant',
-                timestamp: new Date(),
-                final: false
-              };
-              
-              return [...filtered, buildingTranscript];
-            });
+            // Create/update the building message
+            if (!currentAssistantIdRef.current) {
+              currentAssistantIdRef.current = `assistant-building-${Date.now()}`;
+            }
+            
+            const buildingTranscript: TranscriptItem = {
+              id: currentAssistantIdRef.current,
+              text: currentAssistantMessageRef.current,
+              speaker: 'assistant',
+              final: false
+            };
+            
+            setCurrentTranscript(buildingTranscript);
             
             // Set timeout to finalize the message
             assistantMessageTimeoutRef.current = setTimeout(() => {
               finalizeAssistantMessage();
-            }, 1000); // Finalize after 1 second of silence
+            }, 1000);
           }
         },
         
         onBotStartedSpeaking: () => {
           console.log('Bot started speaking');
+          setIsSpeaking(true);
+          setIsListening(false);
+          // Clear user transcript when assistant starts speaking
+          setCurrentTranscript(null);
           // Reset for new message
           currentAssistantMessageRef.current = '';
           currentAssistantIdRef.current = '';
@@ -145,19 +142,29 @@ export default function VoiceChat() {
         
         onBotStoppedSpeaking: () => {
           console.log('Bot stopped speaking');
+          setIsSpeaking(false);
           // Immediately finalize when bot stops speaking
           if (assistantMessageTimeoutRef.current) {
             clearTimeout(assistantMessageTimeoutRef.current);
           }
           finalizeAssistantMessage();
+          // Clear transcript after speaking is done
+          setTimeout(() => {
+            setCurrentTranscript(null);
+          }, 2000);
         },
         
         onUserStartedSpeaking: () => {
           console.log('User started speaking');
+          setIsListening(true);
+          setIsSpeaking(false);
+          // Clear assistant transcript when user starts speaking
+          setCurrentTranscript(null);
         },
         
         onUserStoppedSpeaking: () => {
           console.log('User stopped speaking');
+          setIsListening(false);
         },
         
         onError: (message: any) => {
@@ -198,21 +205,14 @@ export default function VoiceChat() {
   // Helper function to finalize assistant message
   const finalizeAssistantMessage = () => {
     if (currentAssistantMessageRef.current.trim()) {
-      setTranscripts(prev => {
-        // Remove building message
-        const filtered = prev.filter(t => t.id !== currentAssistantIdRef.current);
-        
-        // Add final message
-        const finalTranscript: TranscriptItem = {
-          id: `assistant-final-${Date.now()}-${Math.random()}`,
-          text: currentAssistantMessageRef.current.trim(),
-          speaker: 'assistant',
-          timestamp: new Date(),
-          final: true
-        };
-        
-        return [...filtered, finalTranscript];
-      });
+      const finalTranscript: TranscriptItem = {
+        id: `assistant-final-${Date.now()}-${Math.random()}`,
+        text: currentAssistantMessageRef.current.trim(),
+        speaker: 'assistant',
+        final: true
+      };
+      
+      setCurrentTranscript(finalTranscript);
       
       // Reset
       currentAssistantMessageRef.current = '';
@@ -220,165 +220,169 @@ export default function VoiceChat() {
     }
   };
 
-  // Auto-scroll to bottom when new transcripts are added
-  useEffect(() => {
-    if (transcriptContainerRef.current) {
-      transcriptContainerRef.current.scrollTop = transcriptContainerRef.current.scrollHeight;
-    }
-  }, [transcripts]);
-
-  const handleConnect = async () => {
-    if (!pcClientRef.current) return;
-    
-    setIsConnecting(true);
-    setError(null);
-    
-    try {
-      await pcClientRef.current.connect({
-        connectionUrl: 'http://localhost:8000/api/offer'
-      });
-    } catch (err: any) {
-      console.error('Connection failed:', err);
-      setError(err?.message || 'Failed to connect to the server');
-      setIsConnecting(false);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    if (!pcClientRef.current) return;
-    
-    try {
-      await pcClientRef.current.disconnect();
-    } catch (err) {
-      console.error('Disconnect failed:', err);
+  const handleToggleConnection = async () => {
+    if (isConnected) {
+      // Disconnect
+      if (pcClientRef.current) {
+        try {
+          await pcClientRef.current.disconnect();
+        } catch (err) {
+          console.error('Disconnect failed:', err);
+        }
+      }
+    } else {
+      // Connect
+      if (!pcClientRef.current) return;
+      
+      setIsConnecting(true);
+      setError(null);
+      
+      try {
+        await pcClientRef.current.connect({
+          connectionUrl: 'http://localhost:8000/api/offer'
+        });
+      } catch (err: any) {
+        console.error('Connection failed:', err);
+        setError(err?.message || 'Failed to connect to the server');
+        setIsConnecting(false);
+      }
     }
   };
 
-  const clearTranscripts = () => {
-    setTranscripts([]);
-    currentAssistantMessageRef.current = '';
-    currentAssistantIdRef.current = '';
-    if (assistantMessageTimeoutRef.current) {
-      clearTimeout(assistantMessageTimeoutRef.current);
-    }
-  };
+  // Siri-like animation component
+  const SiriAnimation = () => {
+    const getAnimationState = () => {
+      if (isConnecting) return 'connecting';
+      if (isSpeaking) return 'speaking';
+      if (isListening) return 'listening';
+      if (isConnected) return 'idle';
+      return 'disconnected';
+    };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  };
+    const animationState = getAnimationState();
 
-  return (
-    <div className="min-h-screen bg-gray-100 p-4">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-800">Lisa Voice Assistant</h1>
-            <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-              <span className="text-sm text-gray-600 capitalize">{connectionState}</span>
-            </div>
-          </div>
-
-          {/* Error Display */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-            </div>
-          )}
-
-          {/* Controls */}
-          <div className="flex items-center space-x-4 mb-6">
-            {!isConnected ? (
-              <button
-                onClick={handleConnect}
-                disabled={isConnecting}
-                className={`px-6 py-2 rounded-lg font-medium ${
-                  isConnecting
-                    ? 'bg-gray-400 cursor-not-allowed'
-                    : 'bg-blue-500 hover:bg-blue-600 text-white'
-                }`}
-              >
-                {isConnecting ? 'Connecting...' : 'Connect to Lisa'}
-              </button>
-            ) : (
+    return (
+      <div className="flex items-center justify-center">
+        <button
+          onClick={handleToggleConnection}
+          disabled={isConnecting}
+          className="relative focus:outline-none group"
+        >
+          {/* Main Circle */}
+          <div className={`
+            w-32 h-32 rounded-full transition-all duration-500 cursor-pointer relative overflow-hidden
+            ${animationState === 'disconnected' ? 'bg-white/20 hover:bg-white/30 border-2 border-white/40' : ''}
+            ${animationState === 'connecting' ? 'bg-white/30 animate-pulse border-2 border-white/60' : ''}
+            ${animationState === 'idle' ? 'bg-white/25 hover:bg-white/35 border-2 border-white/50 shadow-lg shadow-white/20' : ''}
+            ${animationState === 'listening' ? 'bg-white/30 border-2 border-white/70' : ''}
+            ${animationState === 'speaking' ? 'bg-white/35 border-2 border-white/80' : ''}
+          `}>
+            {/* Animated Rings for Speaking */}
+            {animationState === 'speaking' && (
               <>
-                <button
-                  onClick={handleDisconnect}
-                  className="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium"
-                >
-                  Disconnect
-                </button>
-                
-                <button
-                  onClick={clearTranscripts}
-                  className="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg font-medium"
-                >
-                  Clear Chat
-                </button>
+                <div className="absolute inset-0 rounded-full bg-white/20 animate-ping opacity-40"></div>
+                <div className="absolute inset-2 rounded-full bg-white/15 animate-ping opacity-50 animation-delay-200"></div>
+                <div className="absolute inset-4 rounded-full bg-white/10 animate-ping opacity-60 animation-delay-400"></div>
               </>
             )}
-          </div>
-
-          {/* Hidden Audio Element for Bot Voice */}
-          <audio 
-            ref={audioRef}
-            autoPlay
-            style={{ display: 'none' }}
-          />
-
-          {/* Transcripts */}
-          <div className="border rounded-lg h-96 overflow-hidden">
-            <div className="bg-gray-50 px-4 py-2 border-b">
-              <h3 className="font-medium text-gray-700">Conversation</h3>
-            </div>
             
-            <div 
-              ref={transcriptContainerRef}
-              className="h-full overflow-y-auto p-4 space-y-3"
-            >
-              {transcripts.length === 0 ? (
-                <div className="text-center text-gray-500 mt-8">
-                  {isConnected ? 'Start speaking...' : 'Connect to start chatting with Lisa'}
+            {/* Animated Rings for Listening */}
+            {animationState === 'listening' && (
+              <>
+                <div className="absolute inset-0 rounded-full bg-white/15 animate-pulse opacity-50"></div>
+                <div className="absolute inset-3 rounded-full bg-white/10 animate-pulse opacity-70 animation-delay-300"></div>
+              </>
+            )}
+            
+            {/* Icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              {(animationState === 'disconnected' || animationState === 'connecting' || animationState === 'idle') && (
+                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+                </svg>
+              )}
+              {animationState === 'listening' && (
+                <div className="flex items-center space-x-1">
+                  <div className="w-1 h-8 bg-white rounded animate-pulse"></div>
+                  <div className="w-1 h-6 bg-white rounded animate-pulse animation-delay-100"></div>
+                  <div className="w-1 h-10 bg-white rounded animate-pulse animation-delay-200"></div>
+                  <div className="w-1 h-4 bg-white rounded animate-pulse animation-delay-300"></div>
+                  <div className="w-1 h-7 bg-white rounded animate-pulse animation-delay-400"></div>
                 </div>
-              ) : (
-                transcripts.map((transcript) => (
-                  <div
-                    key={transcript.id}
-                    className={`flex ${transcript.speaker === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div
-                      className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-                        transcript.speaker === 'user'
-                          ? transcript.final 
-                            ? 'bg-blue-500 text-white' 
-                            : 'bg-blue-300 text-white opacity-75'
-                          : transcript.final
-                            ? 'bg-gray-200 text-gray-800'
-                            : 'bg-gray-100 text-gray-600 opacity-75'
-                      }`}
-                    >
-                      <div className="text-sm">
-                        {transcript.text}
-                        {!transcript.final && transcript.speaker === 'assistant' && (
-                          <span className="ml-1 opacity-60 animate-pulse">●</span>
-                        )}
-                      </div>
-                      <div className={`text-xs mt-1 ${
-                        transcript.speaker === 'user' ? 'text-blue-100' : 'text-gray-500'
-                      }`}>
-                        {transcript.speaker === 'user' ? 'You' : 'Lisa'} • {formatTime(transcript.timestamp)}
-                      </div>
-                    </div>
-                  </div>
-                ))
+              )}
+              {animationState === 'speaking' && (
+                <div className="flex items-center space-x-1">
+                  <div className="w-1 h-4 bg-white rounded animate-bounce"></div>
+                  <div className="w-1 h-8 bg-white rounded animate-bounce animation-delay-100"></div>
+                  <div className="w-1 h-6 bg-white rounded animate-bounce animation-delay-200"></div>
+                  <div className="w-1 h-10 bg-white rounded animate-bounce animation-delay-300"></div>
+                  <div className="w-1 h-5 bg-white rounded animate-bounce animation-delay-400"></div>
+                </div>
               )}
             </div>
           </div>
-        </div>
+        </button>
       </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative">
+      {/* Error Display - positioned at top */}
+      {error && (
+        <div className="absolute top-6 left-6 right-6 p-4 bg-red-500/20 border border-red-500/30 text-red-200 rounded-lg backdrop-blur-sm z-10">
+          {error}
+        </div>
+      )}
+
+      {/* Main Content - Centered */}
+      <div className="flex flex-col items-center justify-center flex-1">
+        {/* Siri Animation */}
+        <div className="mb-16">
+          <SiriAnimation />
+        </div>
+
+        {/* Transcription Area - Single location for current speaker */}
+        {currentTranscript && (
+          <div className="fixed inset-x-6 top-1/2 transform -translate-y-1/2 mt-32 flex justify-center">
+            <div className="max-w-4xl w-full text-center">
+              <div className={`
+                text-xl md:text-2xl lg:text-3xl xl:text-4xl font-light leading-relaxed
+                ${currentTranscript.speaker === 'user' ? 'text-white/90' : 'text-white'}
+                ${!currentTranscript.final && currentTranscript.speaker === 'assistant' ? 'animate-pulse' : ''}
+              `}>
+                {currentTranscript.text}
+                {!currentTranscript.final && currentTranscript.speaker === 'assistant' && (
+                  <span className="ml-2 inline-block w-1 h-6 bg-white animate-pulse"></span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Connection Status - Bottom corner */}
+      <div className="absolute bottom-6 right-6">
+        <div className={`w-3 h-3 rounded-full ${
+          isConnected ? 'bg-green-400' : 'bg-red-400'
+        }`}></div>
+      </div>
+
+      {/* Hidden Audio Element */}
+      <audio 
+        ref={audioRef}
+        autoPlay
+        style={{ display: 'none' }}
+      />
+      
+      {/* Custom CSS for animation delays */}
+      <style jsx>{`
+        .animation-delay-100 { animation-delay: 0.1s; }
+        .animation-delay-200 { animation-delay: 0.2s; }
+        .animation-delay-300 { animation-delay: 0.3s; }
+        .animation-delay-400 { animation-delay: 0.4s; }
+      `}</style>
     </div>
   );
 }
