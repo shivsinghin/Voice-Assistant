@@ -1,43 +1,27 @@
-#
-# Copyright (c) 2024–2025, Daily
-#
-# SPDX-License-Identifier: BSD 2-Clause License
-#
-
 import argparse
 import asyncio
 import sys
 from contextlib import asynccontextmanager
 from typing import Dict
-
 import uvicorn
-from bot import run_bot
+from agent import run_bot
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import FileResponse
 from loguru import logger
-
 from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
 
-# Load environment variables
-load_dotenv(override=True)
 
+load_dotenv(override=True)
 app = FastAPI()
 
 # Store connections by pc_id
 pcs_map: Dict[str, SmallWebRTCConnection] = {}
 
-
 ice_servers = [
-    IceServer(
-        urls="stun:stun.l.google.com:19302",
-    ),
-    IceServer(
-        urls="stun:stun1.l.google.com:19302",
-    ),
-    IceServer(
-        urls="stun:stun2.l.google.com:19302",
-    )
+    IceServer(urls="stun:stun.l.google.com:19302"),
+    IceServer(urls="stun:stun1.l.google.com:19302"),
+    IceServer(urls="stun:stun2.l.google.com:19302"),
 ]
 
 
