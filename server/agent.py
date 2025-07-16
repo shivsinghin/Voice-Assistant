@@ -14,7 +14,6 @@ from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from deepgram import LiveOptions
-
 load_dotenv(override=True)
 
 
@@ -37,7 +36,7 @@ async def run_bot(webrtc_connection):
             model="nova-3",
             sample_rate=16000,
             channels=1,
-            interim_results=True,  # Enable interim results for real-time transcription
+            interim_results=True,
             smart_format=True,
             punctuate=True,
             vad_events=False,
@@ -129,7 +128,7 @@ async def run_bot(webrtc_connection):
     pipeline = Pipeline(
         [
             pipecat_transport.input(),
-            rtvi,  # Add RTVI processor early in pipeline
+            rtvi,
             stt,
             context_aggregator.user(),
             llm,
@@ -146,7 +145,8 @@ async def run_bot(webrtc_connection):
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
-        observers=[RTVIObserver(rtvi)],  # Add RTVI observer to translate events
+        # Add RTVI observer to translate events
+        observers=[RTVIObserver(rtvi)],
     )
 
     # Handle RTVI client ready event
@@ -166,6 +166,5 @@ async def run_bot(webrtc_connection):
         logger.info("Pipecat Client disconnected")
         await task.cancel()
 
-    runner = PipelineRunner(handle_sigint=False)
-
+    runner = PipelineRunner(handle_sigint=False, force_gc=True)
     await runner.run(task)
