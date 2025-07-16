@@ -8,12 +8,21 @@ from agent import run_bot
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware  # Add this import
 from loguru import logger
 from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCConnection
 
-
 load_dotenv(override=True)
 app = FastAPI()
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # Next.js default port
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Store connections by pc_id
 pcs_map: Dict[str, SmallWebRTCConnection] = {}
@@ -23,7 +32,6 @@ ice_servers = [
     IceServer(urls="stun:stun1.l.google.com:19302"),
     IceServer(urls="stun:stun2.l.google.com:19302"),
 ]
-
 
 @app.post("/api/offer")
 async def offer(request: dict, background_tasks: BackgroundTasks):
@@ -50,11 +58,9 @@ async def offer(request: dict, background_tasks: BackgroundTasks):
 
     return answer
 
-
 @app.get("/")
 async def serve_index():
-    return FileResponse("index.html")
-
+    return {"message": "Lisa Voice Assistant Server Running"}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,7 +68,6 @@ async def lifespan(app: FastAPI):
     coros = [pc.disconnect() for pc in pcs_map.values()]
     await asyncio.gather(*coros)
     pcs_map.clear()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="WebRTC demo")
