@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { PipecatClient, RTVIEvent } from '@pipecat-ai/client-js';
+import { PipecatClient, RTVIMessage, Participant } from '@pipecat-ai/client-js';
 import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
 import { Mic, MicOff, Volume2, Waves } from 'lucide-react';
 
@@ -10,6 +10,11 @@ interface TranscriptItem {
   text: string;
   speaker: 'user' | 'assistant';
   final: boolean;
+}
+
+interface TranscriptData {
+  text: string;
+  final?: boolean;
 }
 
 export default function VoiceChat() {
@@ -67,7 +72,7 @@ export default function VoiceChat() {
           setIsConnecting(false);
         },
         
-        onTrackStarted: (track: MediaStreamTrack, participant: any) => {
+        onTrackStarted: (track: MediaStreamTrack, participant?: Participant) => {
           console.log('Track started:', track.kind, participant);
           if (track.kind === 'audio' && participant?.id !== 'local' && audioRef.current) {
             const stream = new MediaStream([track]);
@@ -77,7 +82,7 @@ export default function VoiceChat() {
         },
         
         // User transcripts - only final ones
-        onUserTranscript: (data: any) => {
+        onUserTranscript: (data: TranscriptData) => {
           console.log('User transcript:', data);
           
           if (data.text && data.text.trim() && data.final) {
@@ -93,7 +98,7 @@ export default function VoiceChat() {
         },
         
         // Real-time assistant display with proper spacing
-        onBotTtsText: (data: any) => {
+        onBotTtsText: (data: TranscriptData) => {
           console.log('Bot TTS text:', data);
           
           if (data.text && data.text.trim()) {
@@ -168,26 +173,30 @@ export default function VoiceChat() {
           setIsListening(false);
         },
         
-        onError: (message: any) => {
+        onError: (message: RTVIMessage) => {
           console.error('RTVI Error:', message);
           let errorMessage = 'An error occurred';
+          
+          // Handle RTVIMessage with unknown data
           if (message?.data && typeof message.data === 'object') {
-            errorMessage = message.data.message || message.data.error || message.message || errorMessage;
-          } else if (message?.message) {
-            errorMessage = message.message;
+            const data = message.data as Record<string, unknown>;
+            errorMessage = (data.message as string) || (data.error as string) || errorMessage;
           }
+          
           setError(errorMessage);
           setIsConnecting(false);
         },
 
-        onMessageError: (message: any) => {
+        onMessageError: (message: RTVIMessage) => {
           console.error('Message Error:', message);
           let errorMessage = 'Message error occurred';
+          
+          // Handle RTVIMessage with unknown data
           if (message?.data && typeof message.data === 'object') {
-            errorMessage = message.data.message || message.data.error || message.message || errorMessage;
-          } else if (message?.message) {
-            errorMessage = message.message;
+            const data = message.data as Record<string, unknown>;
+            errorMessage = (data.message as string) || (data.error as string) || errorMessage;
           }
+          
           setError(errorMessage);
         },
       }
@@ -240,11 +249,12 @@ export default function VoiceChat() {
       
       try {
         await pcClientRef.current.connect({
-          connectionUrl: 'http://localhost:8000/api/offer'
+          connectionUrl: 'https://localhost:8000/api/offer'
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error('Connection failed:', err);
-        setError(err?.message || 'Failed to connect to the server');
+        const errorMessage = err instanceof Error ? err.message : 'Failed to connect to the server';
+        setError(errorMessage);
         setIsConnecting(false);
       }
     }
