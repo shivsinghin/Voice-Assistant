@@ -7,6 +7,7 @@ from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 from pipecat.services.deepgram.stt import DeepgramSTTService
@@ -36,13 +37,11 @@ async def run_bot(webrtc_connection):
             model="nova-3",
             sample_rate=16000,
             channels=1,
-            interim_results=False,
+            interim_results=True,  # Enable interim results for real-time transcription
             smart_format=True,
             punctuate=True,
             vad_events=False,
             numerals=True,
-            # Ignore these words in the transcript
-            # replace=["हां जी: ", "हाँ जी: ", "जी हाँ: ", "जी हाँ: "],
         ),
     )
 
@@ -117,17 +116,20 @@ async def run_bot(webrtc_connection):
 
     Remember: You're a voice AI assistant, focusing on clear communication while maintaining the sophisticated yet approachable demeanor. Keep interactions natural and engaging.
 
-    """,
-
+    """
         },
     ]
     
     context = OpenAILLMContext(messages=messages)
     context_aggregator = llm.create_context_aggregator(context)
 
+    # Create RTVI processor for client communication
+    rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
+
     pipeline = Pipeline(
         [
             pipecat_transport.input(),
+            rtvi,  # Add RTVI processor early in pipeline
             stt,
             context_aggregator.user(),
             llm,
@@ -144,13 +146,20 @@ async def run_bot(webrtc_connection):
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
+        observers=[RTVIObserver(rtvi)],  # Add RTVI observer to translate events
     )
+
+    # Handle RTVI client ready event
+    @rtvi.event_handler("on_client_ready")
+    async def on_client_ready(rtvi):
+        logger.info("RTVI Client ready")
+        await rtvi.set_bot_ready()
+        # Kick off the conversation
+        await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @pipecat_transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Pipecat Client connected")
-        # Kick off the conversation.
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @pipecat_transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
