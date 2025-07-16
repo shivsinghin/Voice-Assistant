@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { PipecatClient, RTVIEvent } from '@pipecat-ai/client-js';
 import { SmallWebRTCTransport } from '@pipecat-ai/small-webrtc-transport';
+import { Mic, MicOff, Volume2, Waves } from 'lucide-react';
 
 interface TranscriptItem {
   id: string;
@@ -249,7 +250,7 @@ export default function VoiceChat() {
     }
   };
 
-  // Siri-like animation component
+  // Enhanced Siri-like animation component
   const SiriAnimation = () => {
     const getAnimationState = () => {
       if (isConnecting) return 'connecting';
@@ -268,57 +269,56 @@ export default function VoiceChat() {
           disabled={isConnecting}
           className="relative focus:outline-none group"
         >
-          {/* Main Circle */}
+          {/* Main Container */}
           <div className={`
-            w-32 h-32 rounded-full transition-all duration-500 cursor-pointer relative overflow-hidden
-            ${animationState === 'disconnected' ? 'bg-white/20 hover:bg-white/30 border-2 border-white/40' : ''}
-            ${animationState === 'connecting' ? 'bg-white/30 animate-pulse border-2 border-white/60' : ''}
-            ${animationState === 'idle' ? 'bg-white/25 hover:bg-white/35 border-2 border-white/50 shadow-lg shadow-white/20' : ''}
-            ${animationState === 'listening' ? 'bg-white/30 border-2 border-white/70' : ''}
-            ${animationState === 'speaking' ? 'bg-white/35 border-2 border-white/80' : ''}
+            relative w-20 h-20 sm:w-24 sm:h-24 md:w-28 md:h-28 lg:w-32 lg:h-32 
+            rounded-full transition-all duration-500 cursor-pointer overflow-hidden
+            ${animationState === 'disconnected' ? 'bg-gray-700 hover:bg-gray-800 border-1 border-gray-700' : ''}
+            ${animationState === 'connecting' ? 'bg-gray-700 border-1 border-gray-700' : ''}
+            ${animationState === 'idle' ? 'bg-gray-700 hover:bg-gray-800 border-1 border-gray-700 shadow-lg shadow-white/10' : ''}
+            ${animationState === 'listening' ? 'bg-blue-500/30 ' : ''}
+            ${animationState === 'speaking' ? 'bg-purple-500/30 ' : ''}
           `}>
-            {/* Animated Rings for Speaking */}
+            
+            {/* Speaking Animation - Pulsing Rings */}
             {animationState === 'speaking' && (
               <>
-                <div className="absolute inset-0 rounded-full bg-white/20 animate-ping opacity-40"></div>
-                <div className="absolute inset-2 rounded-full bg-white/15 animate-ping opacity-50 animation-delay-200"></div>
-                <div className="absolute inset-4 rounded-full bg-white/10 animate-ping opacity-60 animation-delay-400"></div>
+                <div className="absolute inset-0 rounded-full bg-purple-400/20 animate-ping opacity-60"></div>
+                <div className="absolute inset-2 rounded-full bg-purple-300/30 animate-ping opacity-70 animation-delay-200"></div>
+                <div className="absolute inset-4 rounded-full bg-purple-200/40 animate-ping opacity-80 animation-delay-400"></div>
               </>
             )}
             
-            {/* Animated Rings for Listening */}
+            {/* Listening Animation - Breathing Effect */}
             {animationState === 'listening' && (
               <>
-                <div className="absolute inset-0 rounded-full bg-white/15 animate-pulse opacity-50"></div>
-                <div className="absolute inset-3 rounded-full bg-white/10 animate-pulse opacity-70 animation-delay-300"></div>
+                <div className="absolute inset-0 rounded-full bg-blue-400/20 animate-pulse opacity-50"></div>
+                <div className="absolute inset-3 rounded-full bg-blue-300/30 animate-pulse opacity-70 animation-delay-300"></div>
               </>
             )}
             
-            {/* Icon */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              {(animationState === 'disconnected' || animationState === 'connecting' || animationState === 'idle') && (
-                <svg className="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
-                  <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
-                </svg>
+            {/* Icons */}
+            <div className="absolute inset-0 flex items-center justify-center z-10">
+              {animationState === 'disconnected' && (
+                <MicOff className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-white/70" />
+              )}
+              {(animationState === 'idle') && (
+                <Mic className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-white" />
               )}
               {animationState === 'listening' && (
                 <div className="flex items-center space-x-1">
-                  <div className="w-1 h-8 bg-white rounded animate-pulse"></div>
-                  <div className="w-1 h-6 bg-white rounded animate-pulse animation-delay-100"></div>
-                  <div className="w-1 h-10 bg-white rounded animate-pulse animation-delay-200"></div>
-                  <div className="w-1 h-4 bg-white rounded animate-pulse animation-delay-300"></div>
-                  <div className="w-1 h-7 bg-white rounded animate-pulse animation-delay-400"></div>
+                  <div className="w-1 h-6 sm:h-8 bg-white rounded animate-pulse"></div>
+                  <div className="w-1 h-4 sm:h-6 bg-white rounded animate-pulse animation-delay-100"></div>
+                  <div className="w-1 h-8 sm:h-10 bg-white rounded animate-pulse animation-delay-200"></div>
+                  <div className="w-1 h-3 sm:h-4 bg-white rounded animate-pulse animation-delay-300"></div>
+                  <div className="w-1 h-5 sm:h-7 bg-white rounded animate-pulse animation-delay-400"></div>
                 </div>
               )}
               {animationState === 'speaking' && (
-                <div className="flex items-center space-x-1">
-                  <div className="w-1 h-4 bg-white rounded animate-bounce"></div>
-                  <div className="w-1 h-8 bg-white rounded animate-bounce animation-delay-100"></div>
-                  <div className="w-1 h-6 bg-white rounded animate-bounce animation-delay-200"></div>
-                  <div className="w-1 h-10 bg-white rounded animate-bounce animation-delay-300"></div>
-                  <div className="w-1 h-5 bg-white rounded animate-bounce animation-delay-400"></div>
-                </div>
+                <Volume2 className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-white animate-pulse" />
+              )}
+              {animationState === 'connecting' && (
+                <Waves className="w-8 h-8 sm:w-10 sm:h-10 md:w-12 md:h-12 text-white animate-pulse" />
               )}
             </div>
           </div>
@@ -328,43 +328,82 @@ export default function VoiceChat() {
   };
 
   return (
-    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative">
+    <div className="min-h-screen bg-black flex flex-col items-center justify-center relative px-4 sm:px-6 lg:px-8">
       {/* Error Display - positioned at top */}
       {error && (
-        <div className="absolute top-6 left-6 right-6 p-4 bg-red-500/20 border border-red-500/30 text-red-200 rounded-lg backdrop-blur-sm z-10">
+        <div className="absolute top-4 sm:top-6 left-4 right-4 sm:left-6 sm:right-6 p-3 sm:p-4 bg-red-500/20 border border-red-500/30 text-red-200 rounded-lg backdrop-blur-sm z-10 text-sm sm:text-base">
           {error}
         </div>
       )}
 
       {/* Main Content - Centered */}
-      <div className="flex flex-col items-center justify-center flex-1">
+      <div className="flex flex-col items-center justify-center flex-1 w-full max-w-4xl mx-auto">
         {/* Siri Animation */}
-        <div className="mb-16">
+        <div className="mb-8 sm:mb-12 md:mb-16">
           <SiriAnimation />
         </div>
 
         {/* Transcription Area - Single location for current speaker */}
         {currentTranscript && (
-          <div className="fixed inset-x-6 top-1/2 transform -translate-y-1/2 mt-32 flex justify-center">
-            <div className="max-w-4xl w-full text-center">
+          <div className="w-full max-w-3xl mx-auto px-4 sm:px-6">
+            <div className="text-center">
               <div className={`
-                text-xl md:text-2xl lg:text-3xl xl:text-4xl font-light leading-relaxed
-                ${currentTranscript.speaker === 'user' ? 'text-white/90' : 'text-white'}
+                text-base sm:text-lg md:text-xl font-light leading-relaxed
+                ${currentTranscript.speaker === 'user' ? 'text-blue-300' : 'text-white'}
                 ${!currentTranscript.final && currentTranscript.speaker === 'assistant' ? 'animate-pulse' : ''}
+                break-words
               `}>
                 {currentTranscript.text}
                 {!currentTranscript.final && currentTranscript.speaker === 'assistant' && (
-                  <span className="ml-2 inline-block w-1 h-6 bg-white animate-pulse"></span>
+                  <span className="ml-2 inline-block w-0.5 h-4 sm:h-5 bg-white animate-pulse"></span>
                 )}
               </div>
+              
+              {/* Speaker indicator */}
+              <div className="mt-2 sm:mt-3">
+                <span className={`
+                  text-xs sm:text-sm font-medium opacity-60
+                  ${currentTranscript.speaker === 'user' ? 'text-blue-400' : 'text-purple-400'}
+                `}>
+                  {currentTranscript.speaker === 'user' ? 'You' : 'Assistant'}
+                </span>
+              </div>
             </div>
+          </div>
+        )}
+
+        {/* Status Text when no transcript */}
+        {!currentTranscript && isConnected && (
+          <div className="text-center text-white/60 max-w-md px-4">
+            <p className="text-sm sm:text-base md:text-lg font-light mb-2">
+              {isListening && "Listening..."}
+              {isSpeaking && "Speaking..."}
+              {!isListening && !isSpeaking && ""}
+            </p>
+          </div>
+        )}
+
+        {/* Initial state */}
+        {!isConnected && !isConnecting && (
+          <div className="text-center text-white/60 max-w-md px-4">
+            <p className="text-xs sm:text-lg opacity-80">
+              Tap to connect
+            </p>
+          </div>
+        )}
+
+        {isConnecting && (
+          <div className="text-center text-white/80 max-w-md px-4">
+            <p className="text-sm sm:text-base md:text-lg font-light">
+              Connecting...
+            </p>
           </div>
         )}
       </div>
 
       {/* Connection Status - Bottom corner */}
-      <div className="absolute bottom-6 right-6">
-        <div className={`w-3 h-3 rounded-full ${
+      <div className="absolute bottom-4 sm:bottom-6 right-4 sm:right-6">
+        <div className={`w-2 h-2 sm:w-3 sm:h-3 rounded-full ${
           isConnected ? 'bg-green-400' : 'bg-red-400'
         }`}></div>
       </div>

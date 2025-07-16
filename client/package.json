@@ -12,6 +12,7 @@
     "@pipecat-ai/client-js": "^1.0.0",
     "@pipecat-ai/small-webrtc-transport": "^1.0.0",
     "autoprefixer": "^10.4.21",
+    "lucide-react": "^0.525.0",
     "next": "15.4.1",
     "postcss": "^8.5.6",
     "react": "19.1.0",
