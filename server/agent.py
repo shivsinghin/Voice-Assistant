@@ -122,7 +122,7 @@ async def run_bot(webrtc_connection):
     context = OpenAILLMContext(messages=messages)
     context_aggregator = llm.create_context_aggregator(context)
 
-    # Create RTVI processor for client communication
+    # Create RTVI processor for client communication 
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
     pipeline = Pipeline(

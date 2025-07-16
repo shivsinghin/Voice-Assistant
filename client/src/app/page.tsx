@@ -23,12 +23,12 @@ export default function VoiceChat() {
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement>(null);
   
-  // Keep track of current assistant message being built
+  // Track current building messages
   const currentAssistantMessageRef = useRef<string>('');
   const assistantMessageTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentAssistantIdRef = useRef<string>('');
 
   useEffect(() => {
-    // Initialize PipecatClient
     const transport = new SmallWebRTCTransport({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -65,15 +65,6 @@ export default function VoiceChat() {
           setIsConnecting(false);
         },
         
-        onBotConnected: () => {
-          console.log('Bot connected');
-        },
-        
-        onBotDisconnected: () => {
-          console.log('Bot disconnected');
-        },
-        
-        // Handle audio tracks properly
         onTrackStarted: (track: MediaStreamTrack, participant: any) => {
           console.log('Track started:', track.kind, participant);
           if (track.kind === 'audio' && participant?.id !== 'local' && audioRef.current) {
@@ -83,46 +74,15 @@ export default function VoiceChat() {
           }
         },
         
-        onTrackStopped: (track: MediaStreamTrack, participant: any) => {
-          console.log('Track stopped:', track.kind, participant);
-        },
-        
-        // User transcription events
+        // User transcripts - only final ones
         onUserTranscript: (data: any) => {
           console.log('User transcript:', data);
           
-          if (data.text && data.text.trim()) {
+          if (data.text && data.text.trim() && data.final) {
             const newTranscript: TranscriptItem = {
               id: `user-${Date.now()}-${Math.random()}`,
-              text: data.text,
+              text: data.text.trim(),
               speaker: 'user',
-              timestamp: new Date(),
-              final: data.final || false
-            };
-            
-            setTranscripts(prev => {
-              // If it's a final transcript, replace any interim ones
-              if (data.final) {
-                const filtered = prev.filter(t => t.speaker !== 'user' || t.final);
-                return [...filtered, newTranscript];
-              } else {
-                // For interim transcripts, replace the last interim user transcript
-                const filtered = prev.filter(t => !(t.speaker === 'user' && !t.final));
-                return [...filtered, newTranscript];
-              }
-            });
-          }
-        },
-        
-        // Use ONLY onBotTranscript for complete sentences (recommended)
-        onBotTranscript: (data: any) => {
-          console.log('Bot transcript (complete):', data);
-          
-          if (data.text && data.text.trim()) {
-            const newTranscript: TranscriptItem = {
-              id: `assistant-transcript-${Date.now()}-${Math.random()}`,
-              text: data.text,
-              speaker: 'assistant',
               timestamp: new Date(),
               final: true
             };
@@ -131,28 +91,32 @@ export default function VoiceChat() {
           }
         },
         
-        // Comment out onBotTtsText to avoid duplicates
-        // OR use this instead of onBotTranscript for real-time word-by-word display
-        /*
+        // FIXED: Real-time assistant display with proper spacing
         onBotTtsText: (data: any) => {
-          console.log('Bot TTS text (streaming):', data);
+          console.log('Bot TTS text:', data);
           
           if (data.text && data.text.trim()) {
-            // Accumulate the text
-            currentAssistantMessageRef.current += data.text;
+            // Add space before new text (except for first word)
+            const textToAdd = currentAssistantMessageRef.current ? ` ${data.text}` : data.text;
+            currentAssistantMessageRef.current += textToAdd;
             
             // Clear existing timeout
             if (assistantMessageTimeoutRef.current) {
               clearTimeout(assistantMessageTimeoutRef.current);
             }
             
-            // Update or create the current assistant message
+            // Update the current message in real-time
             setTranscripts(prev => {
-              // Remove the last assistant message if it's still being built
-              const filtered = prev.filter(t => !t.id.startsWith('assistant-building'));
+              // Remove any existing building message
+              const filtered = prev.filter(t => t.id !== currentAssistantIdRef.current);
+              
+              // Create/update the building message
+              if (!currentAssistantIdRef.current) {
+                currentAssistantIdRef.current = `assistant-building-${Date.now()}`;
+              }
               
               const buildingTranscript: TranscriptItem = {
-                id: 'assistant-building',
+                id: currentAssistantIdRef.current,
                 text: currentAssistantMessageRef.current,
                 speaker: 'assistant',
                 timestamp: new Date(),
@@ -164,53 +128,28 @@ export default function VoiceChat() {
             
             // Set timeout to finalize the message
             assistantMessageTimeoutRef.current = setTimeout(() => {
-              setTranscripts(prev => {
-                const filtered = prev.filter(t => !t.id.startsWith('assistant-building'));
-                
-                const finalTranscript: TranscriptItem = {
-                  id: `assistant-final-${Date.now()}`,
-                  text: currentAssistantMessageRef.current,
-                  speaker: 'assistant',
-                  timestamp: new Date(),
-                  final: true
-                };
-                
-                // Reset the accumulator
-                currentAssistantMessageRef.current = '';
-                
-                return [...filtered, finalTranscript];
-              });
-            }, 1000); // Wait 1 second after last token to finalize
+              finalizeAssistantMessage();
+            }, 1000); // Finalize after 1 second of silence
           }
         },
-        */
         
         onBotStartedSpeaking: () => {
           console.log('Bot started speaking');
-          // Reset accumulator when bot starts speaking
+          // Reset for new message
           currentAssistantMessageRef.current = '';
+          currentAssistantIdRef.current = '';
+          if (assistantMessageTimeoutRef.current) {
+            clearTimeout(assistantMessageTimeoutRef.current);
+          }
         },
         
         onBotStoppedSpeaking: () => {
           console.log('Bot stopped speaking');
-          // Finalize any pending message when bot stops speaking
-          if (currentAssistantMessageRef.current.trim()) {
-            setTranscripts(prev => {
-              const filtered = prev.filter(t => !t.id.startsWith('assistant-building'));
-              
-              const finalTranscript: TranscriptItem = {
-                id: `assistant-final-${Date.now()}`,
-                text: currentAssistantMessageRef.current,
-                speaker: 'assistant',
-                timestamp: new Date(),
-                final: true
-              };
-              
-              currentAssistantMessageRef.current = '';
-              
-              return [...filtered, finalTranscript];
-            });
+          // Immediately finalize when bot stops speaking
+          if (assistantMessageTimeoutRef.current) {
+            clearTimeout(assistantMessageTimeoutRef.current);
           }
+          finalizeAssistantMessage();
         },
         
         onUserStartedSpeaking: () => {
@@ -250,12 +189,36 @@ export default function VoiceChat() {
       if (pcClientRef.current) {
         pcClientRef.current.disconnect();
       }
-      // Clean up timeouts
       if (assistantMessageTimeoutRef.current) {
         clearTimeout(assistantMessageTimeoutRef.current);
       }
     };
   }, []);
+
+  // Helper function to finalize assistant message
+  const finalizeAssistantMessage = () => {
+    if (currentAssistantMessageRef.current.trim()) {
+      setTranscripts(prev => {
+        // Remove building message
+        const filtered = prev.filter(t => t.id !== currentAssistantIdRef.current);
+        
+        // Add final message
+        const finalTranscript: TranscriptItem = {
+          id: `assistant-final-${Date.now()}-${Math.random()}`,
+          text: currentAssistantMessageRef.current.trim(),
+          speaker: 'assistant',
+          timestamp: new Date(),
+          final: true
+        };
+        
+        return [...filtered, finalTranscript];
+      });
+      
+      // Reset
+      currentAssistantMessageRef.current = '';
+      currentAssistantIdRef.current = '';
+    }
+  };
 
   // Auto-scroll to bottom when new transcripts are added
   useEffect(() => {
@@ -294,6 +257,7 @@ export default function VoiceChat() {
   const clearTranscripts = () => {
     setTranscripts([]);
     currentAssistantMessageRef.current = '';
+    currentAssistantIdRef.current = '';
     if (assistantMessageTimeoutRef.current) {
       clearTimeout(assistantMessageTimeoutRef.current);
     }
@@ -398,10 +362,8 @@ export default function VoiceChat() {
                     >
                       <div className="text-sm">
                         {transcript.text}
-                        {!transcript.final && (
-                          <span className="ml-1 opacity-60">
-                            {transcript.speaker === 'user' ? '(speaking...)' : '(typing...)'}
-                          </span>
+                        {!transcript.final && transcript.speaker === 'assistant' && (
+                          <span className="ml-1 opacity-60 animate-pulse">●</span>
                         )}
                       </div>
                       <div className={`text-xs mt-1 ${
