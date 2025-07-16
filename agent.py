@@ -3,17 +3,18 @@ import sys
 from dotenv import load_dotenv
 from loguru import logger
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.audio.vad.silero import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
+from pipecat.processors.frameworks.rtvi import RTVIConfig, RTVIObserver, RTVIProcessor
 from pipecat.transports.base_transport import TransportParams
 from pipecat.transports.network.small_webrtc import SmallWebRTCTransport
 from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from deepgram import LiveOptions
-
 load_dotenv(override=True)
 
 
@@ -23,7 +24,13 @@ async def run_bot(webrtc_connection):
         params=TransportParams(
             audio_in_enabled=True,
             audio_out_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
+            vad_analyzer=SileroVADAnalyzer(
+                params=VADParams(
+                    confidence=0.7,
+                    min_volume=0.7,
+                    start_secs=0.15
+                )
+            ),
             audio_out_10ms_chunks=2,
         ),
     )
@@ -36,13 +43,11 @@ async def run_bot(webrtc_connection):
             model="nova-3",
             sample_rate=16000,
             channels=1,
-            interim_results=False,
+            interim_results=True,
             smart_format=True,
             punctuate=True,
             vad_events=False,
             numerals=True,
-            # Ignore these words in the transcript
-            # replace=["हां जी: ", "हाँ जी: ", "जी हाँ: ", "जी हाँ: "],
         ),
     )
 
@@ -117,17 +122,20 @@ async def run_bot(webrtc_connection):
 
     Remember: You're a voice AI assistant, focusing on clear communication while maintaining the sophisticated yet approachable demeanor. Keep interactions natural and engaging.
 
-    """,
-
+    """
         },
     ]
     
     context = OpenAILLMContext(messages=messages)
     context_aggregator = llm.create_context_aggregator(context)
 
+    # Create RTVI processor for client communication 
+    rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
+
     pipeline = Pipeline(
         [
             pipecat_transport.input(),
+            rtvi,
             stt,
             context_aggregator.user(),
             llm,
@@ -141,22 +149,29 @@ async def run_bot(webrtc_connection):
         pipeline,
         params=PipelineParams(
             allow_interruptions=True,
-            enable_metrics=True,
-            enable_usage_metrics=True,
+            enable_metrics=False,
+            enable_usage_metrics=False,
         ),
+        # Add RTVI observer to translate events
+        observers=[RTVIObserver(rtvi)],
     )
+
+    # Handle RTVI client ready event
+    @rtvi.event_handler("on_client_ready")
+    async def on_client_ready(rtvi):
+        logger.info("RTVI Client ready")
+        await rtvi.set_bot_ready()
+        # Kick off the conversation
+        await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @pipecat_transport.event_handler("on_client_connected")
     async def on_client_connected(transport, client):
         logger.info("Pipecat Client connected")
-        # Kick off the conversation.
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
 
     @pipecat_transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport, client):
         logger.info("Pipecat Client disconnected")
         await task.cancel()
 
-    runner = PipelineRunner(handle_sigint=False)
-
+    runner = PipelineRunner(handle_sigint=False, force_gc=True)
     await runner.run(task)
