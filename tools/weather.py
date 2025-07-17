@@ -1,11 +1,10 @@
 import random
 from loguru import logger
 from pipecat.adapters.schemas.function_schema import FunctionSchema
-from pipecat.adapters.schemas.tools_schema import ToolsSchema
 from pipecat.services.llm_service import FunctionCallParams
 
-# Define the weather function using Standard Schema
-weather_function = FunctionSchema(
+# Define the weather function schema
+SCHEMA = FunctionSchema(
     name="get_weather",
     description="Get current weather information for any location worldwide",
     properties={
@@ -23,8 +22,7 @@ weather_function = FunctionSchema(
     required=["location"]
 )
 
-# Function handlers
-async def get_weather_handler(params: FunctionCallParams):
+async def handler(params: FunctionCallParams):
     """Fake weather function that returns random weather data"""
     try:
         location = params.arguments.get("location", "Unknown Location")
@@ -63,21 +61,5 @@ async def get_weather_handler(params: FunctionCallParams):
             "error": f"Unable to get weather for {location}. Please try again."
         })
 
-# Function registry mapping function names to their handlers
-FUNCTION_HANDLERS = {
-    "get_weather": get_weather_handler,
-}
-
-# List of all function schemas
-ALL_FUNCTIONS = [
-    weather_function,
-]
-
-def get_tools_schema():
-    """Return a ToolsSchema object with all available functions"""
-    return ToolsSchema(standard_tools=ALL_FUNCTIONS)
-
-def register_functions(llm_service):
-    """Register all function handlers with the LLM service"""
-    for function_name, handler in FUNCTION_HANDLERS.items():
-        llm_service.register_function(function_name, handler) 
+# Export the function name for automatic registration
+FUNCTION_NAME = "get_weather" 

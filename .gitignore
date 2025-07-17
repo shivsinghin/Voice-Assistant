@@ -1,4 +1,6 @@
 __pycache__
+tools/__pycache__
 venv
+token.json
 .vscode
 .env
