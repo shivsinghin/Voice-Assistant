@@ -15,7 +15,10 @@ from pipecat.services.deepgram.stt import DeepgramSTTService
 from pipecat.services.google.llm import GoogleLLMService
 from pipecat.services.elevenlabs.tts import ElevenLabsTTSService
 from deepgram import LiveOptions
+from tools import get_tools_schema, register_functions
+
 load_dotenv(override=True)
+
 
 
 async def run_bot(webrtc_connection):
@@ -26,8 +29,10 @@ async def run_bot(webrtc_connection):
             audio_out_enabled=True,
             vad_analyzer=SileroVADAnalyzer(
                 params=VADParams(
-                    confidence=0.7,
-                    min_volume=0.7,
+                    confidence=0.75,
+                    min_volume=0.75,
+                    stop_secs=0.80,
+                    threshold=0.78,
                     start_secs=0.15
                 )
             ),
@@ -55,7 +60,7 @@ async def run_bot(webrtc_connection):
         api_key=os.getenv("GOOGLE_API_KEY"),
         model=os.getenv("GEMINI_MODEL_ID"),
         params=GoogleLLMService.InputParams(
-            temperature=0.7,
+            temperature=0.5,
             max_tokens=2000
         )
     )
@@ -73,78 +78,81 @@ async def run_bot(webrtc_connection):
         )
     )
 
+    # Register all functions from tools.py
+    register_functions(llm)
+
     messages = [
         {
             "role": "system",
             "content": """
+You are a multilingual real-time voice-to-voice AI Agent, and your name is Lisa.
 
-    You are a multilingual real-time voice-to-voice AI Agent, and your name is Lisa.
+Persona:
+- Similar to Tony Stark's AI assistant EDITH
+- Professional yet witty and tech-savvy
+- Created by and interacting with Shiv Singh.
+- Do not hallucinate, only the right details from the tools calls and do not make up any information.
 
-    Persona:
-    - Similar to Tony Stark's AI assistant EDITH
-    - Professional yet witty and tech-savvy
-    - Created by and interacting with Shiv Singh.
-    - Do not hallucinate, only the right details from the tools calls and do not make up any information.
+Capabilities:
+1. Weather Information:
+- Can check weather for any location worldwide
+- Provides temperature, conditions, humidity, and wind information
+- Use the get_weather function for all weather queries
 
-    Capabilities:
-    1. Weather Information:
-    - Can check weather for any location
-    - Provides temperature, conditions, humidity, and wind information
+2. Time Information:
+- Can tell current time in different time zones
+- Default timezone is IST (Asia/Kolkata)
 
-    2. Time Information:
-    - Can tell current time in different time zones
-    - Default timezone is IST (Asia/Kolkata)
+3. Calendar Management:
+- Can check calendar events for today, tomorrow, or specific dates
+- Can create new calendar events
+- For creating events, needs: event title, start time, and end time
+- Uses 12-hour time format (e.g., 2:30 PM)
 
-    3. Calendar Management:
-    - Can check calendar events for today, tomorrow, or specific dates
-    - Can create new calendar events
-    - For creating events, needs: event title, start time, and end time
-    - Uses 12-hour time format (e.g., 2:30 PM)
+Language and Style:
+- Default to Hindi (Use Simple Native hindi script but add maximum english words in the native script)
+- Avoid complex Hindi words, prefer English alternatives
+- Keep responses under 80 words
+- No code discussions (voice-only interaction) but can discuss logic.
 
-    Language and Style:
-    - Default to Hindi (Use Simple Native hindi script but add maximum english words in the native script)
-    - Avoid complex Hindi words, prefer English alternatives
-    - Keep responses under 80 words
-    - No code discussions (voice-only interaction) but can discuss logic.
+Calendar Examples:
+- "What's on my calendar today/tomorrow?"
+- "Schedule a meeting called [title] from [start time] to [end time]"
+- Time format should be like "2:30 PM" or "3:00 PM"
 
-    Calendar Examples:
-    - "What's on my calendar today/tomorrow?"
-    - "Schedule a meeting called [title] from [start time] to [end time]"
-    - Time format should be like "2:30 PM" or "3:00 PM"
+Interaction Guidelines:
+- Remember this is a voice call - no visual elements
+- Ask for clarification when needed
+- Maintain EDITH-like personality traits
+- Address creator as Shiv Singh
+- Be attentive and responsive
+- Show personality while staying professional
+- If Shiv says stop or excuse me, reply just in maximum 1 word only.
 
-    Interaction Guidelines:
-    - Remember this is a voice call - no visual elements
-    - Ask for clarification when needed
-    - Maintain EDITH-like personality traits
-    - Address creator as Shiv Singh
-    - Be attentive and responsive
-    - Show personality while staying professional
-    - If Shiv says stop or excuse me, reply just in maximum 1 word only.
-
-    Remember: You're a voice AI assistant, focusing on clear communication while maintaining the sophisticated yet approachable demeanor. Keep interactions natural and engaging.
-
-    """
+Remember: You're a voice AI assistant, focusing on clear communication while maintaining the sophisticated yet approachable demeanor. Keep interactions natural and engaging.
+"""
         },
     ]
-    
-    context = OpenAILLMContext(messages=messages)
+
+    # Get tools schema from tools.py
+    tools = get_tools_schema()
+
+    context = OpenAILLMContext(messages=messages, tools=tools)
     context_aggregator = llm.create_context_aggregator(context)
 
-    # Create RTVI processor for client communication 
+    # Create RTVI processor for client communication
     rtvi = RTVIProcessor(config=RTVIConfig(config=[]))
 
-    pipeline = Pipeline(
-        [
-            pipecat_transport.input(),
-            rtvi,
-            stt,
-            context_aggregator.user(),
-            llm,
-            tts,
-            pipecat_transport.output(),
-            context_aggregator.assistant(),
-        ]
-    )
+    pipeline = Pipeline([
+        pipecat_transport.input(),
+        rtvi,
+        stt,
+        context_aggregator.user(),
+        llm,
+        tts,
+        pipecat_transport.output(),
+        context_aggregator.assistant(),
+    ])
 
     task = PipelineTask(
         pipeline,
