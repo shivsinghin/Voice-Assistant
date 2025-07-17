@@ -17,21 +17,28 @@ from pipecat.transports.network.webrtc_connection import IceServer, SmallWebRTCC
 import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
+import requests
 
 
 load_dotenv(override=True)
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-jwt-key-change-this-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
+ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 # Password Configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Admin User Configuration (from environment variables)
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD_HASH = pwd_context.hash(os.getenv("ADMIN_PASSWORD", "secure_password_123"))
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
+ADMIN_PASSWORD_HASH = pwd_context.hash(ADMIN_PASSWORD)
+
+# reCAPTCHA Configuration
+RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY")
+RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY")
+RECAPTCHA_VERIFY_URL = "https://www.google.com/recaptcha/api/siteverify"
 
 # Security
 security = HTTPBearer()
@@ -60,6 +67,7 @@ ice_servers = [
 class LoginRequest(BaseModel):
     username: str
     password: str
+    recaptcha_token: str
 
 class Token(BaseModel):
     access_token: str
@@ -69,12 +77,45 @@ class Token(BaseModel):
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
+async def verify_recaptcha(token: str) -> bool:
+    """Verify reCAPTCHA token with Google's API"""
+    if not RECAPTCHA_SECRET_KEY or not RECAPTCHA_SITE_KEY:
+        logger.warning("reCAPTCHA not configured, skipping verification")
+        return True  # Skip verification if not configured
+    
+    # Allow fallback tokens when reCAPTCHA is disabled/failed on client
+    if token in ['disabled', 'fallback', 'error']:
+        logger.info(f"reCAPTCHA fallback token received: {token}")
+        return True
+    
+    try:
+        response = requests.post(RECAPTCHA_VERIFY_URL, data={
+            'secret': RECAPTCHA_SECRET_KEY,
+            'response': token
+        }, timeout=10)
+        
+        result = response.json()
+        success = result.get('success', False)
+        score = result.get('score', 0)
+        
+        # For reCAPTCHA v3, also check the score (0.0 to 1.0, higher is better)
+        if success and score >= 0.5:
+            logger.info(f"reCAPTCHA verification successful, score: {score}")
+            return True
+        else:
+            logger.warning(f"reCAPTCHA verification failed, success: {success}, score: {score}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"reCAPTCHA verification error: {e}")
+        return False
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+        expire = datetime.utcnow() + timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -107,6 +148,14 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # Authentication endpoints
 @app.post("/api/login", response_model=Token)
 async def login(login_request: LoginRequest):
+    # Verify reCAPTCHA first
+    if not await verify_recaptcha(login_request.recaptcha_token):
+        logger.warning(f"reCAPTCHA verification failed for username: {login_request.username}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="reCAPTCHA verification failed. Please try again.",
+        )
+    
     # Verify username and password
     if login_request.username != ADMIN_USERNAME or not verify_password(login_request.password, ADMIN_PASSWORD_HASH):
         logger.warning(f"Failed login attempt for username: {login_request.username}")
@@ -117,7 +166,7 @@ async def login(login_request: LoginRequest):
         )
     
     # Create access token
-    access_token_expires = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    access_token_expires = timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS)
     access_token = create_access_token(
         data={"sub": login_request.username}, expires_delta=access_token_expires
     )
@@ -128,6 +177,14 @@ async def login(login_request: LoginRequest):
 @app.post("/api/verify-token")
 async def verify_user_token(current_user: str = Depends(verify_token)):
     return {"valid": True, "username": current_user}
+
+@app.get("/api/recaptcha-config")
+async def get_recaptcha_config():
+    """Get reCAPTCHA configuration for client"""
+    return {
+        "site_key": RECAPTCHA_SITE_KEY,
+        "enabled": bool(RECAPTCHA_SECRET_KEY and RECAPTCHA_SITE_KEY)
+    }
 
 @app.post("/api/offer")
 async def offer(request: dict, background_tasks: BackgroundTasks, current_user: str = Depends(verify_token)):

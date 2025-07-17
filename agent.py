@@ -65,10 +65,10 @@ async def run_bot(webrtc_connection):
         voice_id=os.getenv("ELEVENLABS_VOICE_ID"),
         model=os.getenv("ELEVENLABS_MODEL_ID"),
         params=ElevenLabsTTSService.InputParams(
-            stability=0.90,
-            similarity_boost=0.90,
+            stability=0.80,
+            similarity_boost=0.80,
             style=0,
-            speed=1.05,
+            speed=1.0,
             output_format="pcm_24000"
         )
     )
@@ -84,6 +84,7 @@ async def run_bot(webrtc_connection):
     - Similar to Tony Stark's AI assistant EDITH
     - Professional yet witty and tech-savvy
     - Created by and interacting with Shiv Singh.
+    - Do not hallucinate, only the right details from the tools calls and do not make up any information.
 
     Capabilities:
     1. Weather Information:
@@ -149,8 +150,8 @@ async def run_bot(webrtc_connection):
         pipeline,
         params=PipelineParams(
             allow_interruptions=True,
-            enable_metrics=False,
-            enable_usage_metrics=False,
+            enable_metrics=True,
+            enable_usage_metrics=True,
         ),
         # Add RTVI observer to translate events
         observers=[RTVIObserver(rtvi)],

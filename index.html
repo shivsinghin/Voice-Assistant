@@ -6,6 +6,7 @@
     <title>Lisa - Personal Voice Agent</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <!-- reCAPTCHA script will be loaded dynamically -->
     <style>
         .animation-delay-100 { animation-delay: 0.1s; }
         .animation-delay-200 { animation-delay: 0.2s; }
@@ -35,37 +36,41 @@
 
     <!-- Login Modal -->
     <div id="login-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-        <div class="bg-stone-900 border border-stone-700 rounded-lg p-8 w-full max-w-md mx-4 animate-fadeInUp">
-            <h2 class="text-2xl font-bold text-white mb-6 text-center">Lisa Access Portal</h2>
+        <div class="bg-stone-900/90 border border-stone-800 rounded-2xl p-8 w-full max-w-md mx-4 animate-fadeInUp">
+            <h2 class="text-xl font-normal text-white mb-6 text-center">Enter your email and password for accessing Lisa.</h2>
             <form id="login-form">
                 <div class="mb-4">
-                    <label for="username" class="block text-white/80 text-sm font-medium mb-2">Username</label>
+                    <label for="username" class="block text-white/80 text-md font-normal mb-2">Username</label>
                     <input 
                         type="text" 
                         id="username" 
                         name="username" 
                         required
-                        class="w-full px-3 py-3 bg-stone-800 border border-stone-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="Enter your username"
+                        class="w-full px-3 py-3 bg-stone-900 border-2 border-stone-800 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-gray-800 focus:border-transparent"
+                        placeholder=""
                     >
                 </div>
                 <div class="mb-6">
-                    <label for="password" class="block text-white/80 text-sm font-medium mb-2">Password</label>
+                    <label for="password" class="block text-white/80 text-md font-normal mb-2">Password</label>
                     <input 
                         type="password" 
                         id="password" 
                         name="password" 
                         required
-                        class="w-full px-3 py-3 bg-stone-800 border border-stone-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                        placeholder="Enter your password"
+                        class="w-full px-3 py-3 bg-stone-900 border-2 border-stone-800 rounded-lg text-white focus:outline-none focus:ring-1 focus:ring-gray-800 focus:border-transparent"
+                        placeholder=""
                     >
                 </div>
                 <button 
                     type="submit" 
                     id="login-btn"
-                    class="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 focus:ring-offset-stone-900"
+                    class="w-full bg-white text-lg hover:bg-stone-200 text-black font-medium py-3 px-4 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-1 focus:ring-gray-800 focus:ring-offset-2 focus:ring-offset-stone-900 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                    Access Lisa
+                    <span id="login-btn-text">LOGIN</span>
+                    <span id="login-spinner" class="hidden">
+                        <i data-lucide="loader-2" class="w-4 h-4 animate-spin inline-block mr-2"></i>
+                        Verifying...
+                    </span>
                 </button>
             </form>
             <div id="login-error" class="hidden mt-4 p-3 bg-red-500/20 border border-red-500/30 text-red-200 rounded-lg text-sm text-center">
@@ -78,7 +83,7 @@
         
         <!-- Logout Button -->
         <div class="absolute top-4 right-4">
-            <button id="logout-btn" class="pb-1 px-3 py-0.5 bg-black border-2 border-stone-900 hover:bg-stone-800 text-stone-700 rounded-lg transition-colors duration-200 text-sm">
+            <button id="logout-btn" class="pb-1 px-3 py-0.5 bg-black border-2 border-stone-900 hover:bg-stone-900 text-stone-700 rounded-lg transition-colors duration-200 text-md">
                 Logout
             </button>
         </div>
@@ -185,6 +190,10 @@
 
         // Authentication state
         let accessToken = localStorage.getItem('lisa_access_token');
+        
+        // reCAPTCHA configuration
+        let RECAPTCHA_SITE_KEY = null;
+        let RECAPTCHA_ENABLED = false;
 
         // DOM Elements
         const errorDisplay = document.getElementById('error-display');
@@ -193,6 +202,9 @@
         const loginForm = document.getElementById('login-form');
         const loginError = document.getElementById('login-error');
         const logoutBtn = document.getElementById('logout-btn');
+        const loginBtn = document.getElementById('login-btn');
+        const loginBtnText = document.getElementById('login-btn-text');
+        const loginSpinner = document.getElementById('login-spinner');
         const connectBtn = document.getElementById('connect-btn');
         const mainContainer = document.getElementById('main-container');
         const speakingRings = document.getElementById('speaking-rings');
@@ -345,15 +357,86 @@
             loginError.classList.add('hidden');
         }
 
+        function showLoginLoading() {
+            loginBtn.disabled = true;
+            loginBtnText.classList.add('hidden');
+            loginSpinner.classList.remove('hidden');
+        }
+
+        function hideLoginLoading() {
+            loginBtn.disabled = false;
+            loginBtnText.classList.remove('hidden');
+            loginSpinner.classList.add('hidden');
+        }
+
+        // reCAPTCHA functions
+        async function loadRecaptchaConfig() {
+            try {
+                const response = await fetch('/api/recaptcha-config');
+                const config = await response.json();
+                
+                RECAPTCHA_SITE_KEY = config.site_key;
+                RECAPTCHA_ENABLED = config.enabled;
+                
+                if (RECAPTCHA_ENABLED && RECAPTCHA_SITE_KEY) {
+                    // Load reCAPTCHA script dynamically
+                    const script = document.createElement('script');
+                    script.src = `https://www.google.com/recaptcha/api.js?render=${RECAPTCHA_SITE_KEY}`;
+                    document.head.appendChild(script);
+                    console.log('reCAPTCHA enabled and script loaded');
+                } else {
+                    console.warn('reCAPTCHA not configured - skipping bot protection');
+                }
+            } catch (error) {
+                console.error('Failed to load reCAPTCHA config:', error);
+                RECAPTCHA_ENABLED = false;
+            }
+        }
+
+        async function executeRecaptcha() {
+            if (!RECAPTCHA_ENABLED || !RECAPTCHA_SITE_KEY) {
+                console.log('reCAPTCHA disabled, returning dummy token');
+                return 'disabled';
+            }
+
+            return new Promise((resolve, reject) => {
+                if (typeof grecaptcha === 'undefined') {
+                    console.warn('reCAPTCHA not loaded, using fallback');
+                    resolve('fallback');
+                    return;
+                }
+
+                grecaptcha.ready(function() {
+                    grecaptcha.execute(RECAPTCHA_SITE_KEY, {action: 'login'}).then(function(token) {
+                        resolve(token);
+                    }).catch(function(error) {
+                        console.error('reCAPTCHA execution failed:', error);
+                        resolve('error');
+                    });
+                });
+            });
+        }
+
         // Authentication functions
         async function login(username, password) {
+            showLoginLoading();
+            hideLoginError();
+            
             try {
+                // Get reCAPTCHA token
+                const recaptchaToken = await executeRecaptcha();
+                console.log('reCAPTCHA token obtained:', recaptchaToken ? 'success' : 'failed');
+                
                 const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ username, password }),
+                    body: JSON.stringify({ 
+                        username, 
+                        password, 
+                        recaptcha_token: recaptchaToken 
+                    }),
                 });
 
                 if (response.ok) {
@@ -362,13 +445,26 @@
                     localStorage.setItem('lisa_access_token', accessToken);
                     showMainApp();
                     hideLoginError();
+                    console.log('Login successful');
                 } else {
-                    const errorData = await response.json();
-                    showLoginError(errorData.detail || 'Login failed');
+                    const errorData = await response.json().catch(() => ({}));
+                    const errorMessage = errorData.detail || `Login failed (${response.status})`;
+                    console.error('Login failed:', response.status, errorData);
+                    showLoginError(errorMessage);
                 }
             } catch (error) {
                 console.error('Login error:', error);
-                showLoginError('Network error. Please try again.');
+                
+                // More specific error messages
+                if (error instanceof TypeError && error.message.includes('fetch')) {
+                    showLoginError('Cannot connect to server. Please check if the server is running.');
+                } else if (error.name === 'AbortError') {
+                    showLoginError('Request timeout. Please try again.');
+                } else {
+                    showLoginError(`Network error: ${error.message}`);
+                }
+            } finally {
+                hideLoginLoading();
             }
         }
 
@@ -776,22 +872,31 @@
 
         // Initialize authentication and app
         async function initializeApp() {
-            const isTokenValid = await verifyToken();
-            
-            if (isTokenValid) {
-                showMainApp();
-            } else {
-                showLoginModal();
-                // Clear invalid token
-                if (accessToken) {
-                    localStorage.removeItem('lisa_access_token');
-                    accessToken = null;
+            try {
+                // Load reCAPTCHA configuration first
+                await loadRecaptchaConfig();
+                
+                const isTokenValid = await verifyToken();
+                
+                if (isTokenValid) {
+                    showMainApp();
+                } else {
+                    showLoginModal();
+                    // Clear invalid token
+                    if (accessToken) {
+                        localStorage.removeItem('lisa_access_token');
+                        accessToken = null;
+                    }
                 }
+                
+                updateAnimationState();
+                updateStatusDisplay();
+                updateConnectionIndicator('disconnected');
+            } catch (error) {
+                console.error('App initialization error:', error);
+                showLoginModal();
+                showError('Failed to initialize app. Please refresh the page.');
             }
-            
-            updateAnimationState();
-            updateStatusDisplay();
-            updateConnectionIndicator('disconnected');
         }
 
         // Start the app
