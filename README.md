@@ -1,1 +1,1 @@
-Fixing the git configuration using SSH
+README TEMPLATE
