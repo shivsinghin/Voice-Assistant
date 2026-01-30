@@ -1,4 +1,4 @@
-## Browser Voice Agent
+## Browser Based Voice Assistant
 
 A minimal real-time voice-to-voice AI assistant that runs entirely in the browser. Using WebRTC for low-latency audio streaming with integrated tools for weather, calendar, and time queries.
 
